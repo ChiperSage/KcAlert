@@ -104,7 +104,7 @@ public class AlertService extends Service {
         } catch (Throwable e) {
             fails++;
             if (firstFailAt == 0) firstFailAt = System.currentTimeMillis();
-            status("Error (" + fails + "x): " + e.getMessage());
+            status("Error (" + fails + "x): " + describe(e));
             if (!staleNotified && System.currentTimeMillis() - firstFailAt >= STALE_AFTER_MS) {
                 staleNotified = true;
                 Notif.post(this, 2, Notif.CH_ALERT, "Data KuCoin tidak bisa diambil",
@@ -158,6 +158,20 @@ public class AlertService extends Service {
     }
 
     private void status(String text) {
-        Notif.post(this, 1, Notif.CH_STATUS, "KC Alert aktif", text, null, false, MainActivity.class);
+        Notif.post(this, 1, Notif.CH_STATUS, "KC Alert aktif", text, text, false, MainActivity.class);
+    }
+
+    /** Terjemahkan error TLS/sertifikat menjadi petunjuk yang bisa langsung dicek pengguna. */
+    private static String describe(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            String n = t.getClass().getName();
+            String m = String.valueOf(t.getMessage());
+            if (n.contains("CertPath") || n.contains("SSLHandshake") || n.contains("CertificateException")
+                    || m.contains("Chain validation") || m.contains("Trust anchor")) {
+                return "Sertifikat HTTPS ditolak. Cek tanggal & jam HP (harus otomatis), "
+                        + "matikan VPN/pemblokir iklan/DNS filter, dan update Android. (" + m + ")";
+            }
+        }
+        return String.valueOf(e.getMessage());
     }
 }
