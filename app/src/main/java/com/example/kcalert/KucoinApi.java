@@ -19,13 +19,19 @@ final class KucoinApi {
         Tick(String s, double l, double v) { symbol = s; last = l; volValue = v; }
     }
 
-    static List<Tick> fetch() throws Exception {
+    static final class Result {
+        final List<Tick> ticks; final long serverTime;
+        Result(List<Tick> t, long s) { ticks = t; serverTime = s; }
+    }
+
+    static Result fetch() throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(URL_ALL).openConnection();
         c.setConnectTimeout(8000);
         c.setReadTimeout(15000);
-        c.setRequestProperty("User-Agent", "kc-alert/1.0");
+        c.setRequestProperty("User-Agent", "kc-alert/2.0");
         try {
             int code = c.getResponseCode();
+            if (code == 429 || code == 418) throw new IOException("Dibatasi KuCoin (HTTP " + code + ")");
             if (code != 200) throw new IOException("HTTP " + code);
             StringBuilder sb = new StringBuilder();
             try (BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), "UTF-8"))) {
@@ -35,7 +41,8 @@ final class KucoinApi {
             }
             JSONObject root = new JSONObject(sb.toString());
             if (!"200000".equals(root.optString("code"))) throw new IOException("API " + root.optString("code"));
-            JSONArray arr = root.getJSONObject("data").getJSONArray("ticker");
+            JSONObject data = root.getJSONObject("data");
+            JSONArray arr = data.getJSONArray("ticker");
             List<Tick> out = new ArrayList<>(arr.length());
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject o = arr.getJSONObject(i);
@@ -47,7 +54,9 @@ final class KucoinApi {
                     out.add(new Tick(sym, last, vol));
                 } catch (NumberFormatException ignored) { }
             }
-            return out;
+            // respons kosong/terpotong dianggap error, bukan "tidak ada token"
+            if (out.size() < 50) throw new IOException("Data ticker tidak lengkap (" + out.size() + ")");
+            return new Result(out, data.optLong("time", 0));
         } finally {
             c.disconnect();
         }

@@ -120,7 +120,7 @@ public class TokenPickerActivity extends Activity {
         updateCount();
         new Thread(() -> {
             try {
-                List<KucoinApi.Tick> t = KucoinApi.fetch();
+                List<KucoinApi.Tick> t = KucoinApi.fetch().ticks;
                 Collections.sort(t, (x, y) -> Double.compare(y.volValue, x.volValue));
                 List<String> syms = new ArrayList<>();
                 for (KucoinApi.Tick k : t) syms.add(k.symbol);

@@ -2,10 +2,16 @@ package com.example.kcalert;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlarmManager;
+import android.app.NotificationManager;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.text.InputType;
 import android.view.View;
 import android.widget.AdapterView;
@@ -22,6 +28,7 @@ public class MainActivity extends Activity {
     private EditText etWin, etPct, etVol, etCd, etInt;
     private Spinner spDir, spScope;
     private Button btnPick, btnGroups;
+    private TextView tvHealth;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -30,6 +37,22 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         int p = (int) (16 * getResources().getDisplayMetrics().density);
         root.setPadding(p, p, p, p);
+
+        tvHealth = new TextView(this);
+        root.addView(tvHealth);
+        Button bNotif = new Button(this);
+        bNotif.setText("Pengaturan notifikasi");
+        bNotif.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())));
+        Button bBatt = new Button(this);
+        bBatt.setText("Izinkan jalan di latar belakang (baterai)");
+        bBatt.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)));
+        Button bHist = new Button(this);
+        bHist.setText("Riwayat alert");
+        bHist.setOnClickListener(v -> startActivity(new Intent(this, HistoryActivity.class)));
+        root.addView(bNotif);
+        root.addView(bBatt);
+        root.addView(bHist);
 
         etWin = field(root, "Jendela waktu (menit)", String.valueOf(c.windowMin), false);
         etPct = field(root, "Ambang global (%) - mode Semua & Token pilihan", num(c.pct), true);
@@ -70,8 +93,11 @@ public class MainActivity extends Activity {
         Button stop = new Button(this);
         stop.setText("Berhenti");
         stop.setOnClickListener(v -> {
+            getSharedPreferences("kc", MODE_PRIVATE).edit().putBoolean("enabled", false).apply();
+            ((AlarmManager) getSystemService(ALARM_SERVICE)).cancel(Watchdog.pi(this));
             stopService(new Intent(this, AlertService.class));
             Toast.makeText(this, "Dihentikan", Toast.LENGTH_SHORT).show();
+            refreshHealth();
         });
         root.addView(start);
         root.addView(stop);
@@ -89,6 +115,21 @@ public class MainActivity extends Activity {
         btnPick.setText("Pilih token (" + c.tokens.size() + " dipilih)");
         btnGroups.setText("Kelompok & ambang (" + active + " aktif dari " + c.groups.size() + ")");
         spScope.setSelection(c.scope); // editor token/kelompok bisa mengubah mode
+        refreshHealth();
+    }
+
+    private void refreshHealth() {
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        boolean notif = nm.areNotificationsEnabled();
+        boolean batt = pm.isIgnoringBatteryOptimizations(getPackageName());
+        SharedPreferences sp = getSharedPreferences("kc", Context.MODE_PRIVATE);
+        long hb = sp.getLong("hb", 0);
+        String last = hb == 0 ? "-" : ((System.currentTimeMillis() - hb) / 60000) + " menit lalu";
+        tvHealth.setText("Service: " + (AlertService.running ? "[OK] berjalan" : "[!] tidak berjalan")
+                + "\nNotifikasi: " + (notif ? "[OK] aktif" : "[!] dimatikan, alert tidak akan muncul")
+                + "\nBaterai: " + (batt ? "[OK] tidak dibatasi" : "[!] dibatasi, Android bisa mematikan service")
+                + "\nData terakhir sukses: " + last);
     }
 
     private void start() {
@@ -125,6 +166,7 @@ public class MainActivity extends Activity {
         Intent i = new Intent(this, AlertService.class);
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(i); else startService(i);
         Toast.makeText(this, "Berjalan. Alert muncul setelah riwayat cukup (sepanjang jendela).", Toast.LENGTH_LONG).show();
+        tvHealth.postDelayed(this::refreshHealth, 1500);
     }
 
     private void label(LinearLayout root, String t) {
